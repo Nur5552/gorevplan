@@ -729,7 +729,7 @@ app.put('/api/admin/yardim-talepleri/:id/durum', girisKontrol, adminKontrol, (re
 
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
-const PORT = Number(process.env.PORT || 3000);
+const PORT = Number(process.env.PORT || 8080);
 function startServer() {
     const dene = (port, deneme) => {
         const server = app.listen(port, () => console.log(`http://localhost:${port}`));
@@ -744,3 +744,7 @@ function startServer() {
     };
     dene(PORT, 0);
 }
+
+app.listen(PORT, () => {
+    console.log(`Server ${PORT} portunda çalışıyor`);
+});
