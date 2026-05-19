@@ -13,7 +13,7 @@ const GitHubStrategy = require('passport-github2').Strategy;
 const FacebookStrategy = require('passport-facebook').Strategy;
 
 const app = express();
-const BASE_URL = (process.env.BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
+const BASE_URL = (process.env.BASE_URL || 'https://www.gorevplan.com.tr').replace(/\/$/, '');
 const GOREV_DURUMLARI = ['bekliyor', 'devam_ediyor', 'tamamlandi'];
 const TAMAMLAMA_PUANI = 15;
 const FORUM_URL = process.env.FORUM_URL || 'https://www.reddit.com/r/GetStudying/';
@@ -64,6 +64,37 @@ function siraSorgu(liste, bitti) {
 
 function veritabaniHazirla(cb) {
     const adimlar = [
+        {
+            sql: `CREATE TABLE IF NOT EXISTS kullanicilar (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+                ad VARCHAR(100) NOT NULL,
+                soyad VARCHAR(100) NOT NULL,
+                kullanici_adi VARCHAR(100) NOT NULL UNIQUE,
+                sifre VARCHAR(255) NULL,
+                rol VARCHAR(32) NOT NULL DEFAULT 'kullanici',
+                google_id VARCHAR(64) NULL UNIQUE,
+                github_id VARCHAR(64) NULL UNIQUE,
+                facebook_id VARCHAR(64) NULL UNIQUE,
+                olusturma_tarihi TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                KEY idx_kullanici_adi (kullanici_adi)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+        },
+        {
+            sql: `CREATE TABLE IF NOT EXISTS gorevler (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+                kullanici_id INT UNSIGNED NOT NULL,
+                gorev_adi VARCHAR(255) NOT NULL,
+                aciklama TEXT NULL,
+                son_tarih DATE NULL,
+                durum ENUM('bekliyor','devam_ediyor','tamamlandi') NOT NULL DEFAULT 'bekliyor',
+                olusturma_tarihi TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                KEY idx_gorev_kullanici (kullanici_id),
+                CONSTRAINT fk_gorev_kullanici FOREIGN KEY (kullanici_id) REFERENCES kullanicilar (id)
+                    ON DELETE CASCADE ON UPDATE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+        },
         {
             sql: `CREATE TABLE IF NOT EXISTS kullanici_odul (
                 kullanici_id INT UNSIGNED NOT NULL,
@@ -136,11 +167,17 @@ function veritabaniHazirla(cb) {
 
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
+const sessions = new Map();
 app.use(session({
     secret: process.env.SESSION_SECRET || 'gizli-anahtar-123',
     resave: false,
     saveUninitialized: false,
     name: 'ogrenci.sid',
+    store: {
+        get: (sid, cb) => cb(null, sessions.get(sid) || null),
+        set: (sid, sess, cb) => { sessions.set(sid, sess); cb(); },
+        destroy: (sid, cb) => { sessions.delete(sid); cb(); }
+    },
     cookie: {
         secure: isProduction,
         httpOnly: true,
