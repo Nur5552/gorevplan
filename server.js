@@ -8,6 +8,7 @@ const passport = require('passport');
 const bodyParser = require('body-parser');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
+const { EventEmitter } = require('events');
 const { Strategy: GoogleStrategy } = require('passport-google-oauth20');
 const GitHubStrategy = require('passport-github2').Strategy;
 const FacebookStrategy = require('passport-facebook').Strategy;
@@ -168,16 +169,19 @@ function veritabaniHazirla(cb) {
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 const sessions = new Map();
+
+class SimpleStore extends EventEmitter {
+    get(sid, cb) { cb(null, sessions.get(sid) || null); }
+    set(sid, sess, cb) { sessions.set(sid, sess); cb(); }
+    destroy(sid, cb) { sessions.delete(sid); cb(); }
+}
+
 app.use(session({
     secret: process.env.SESSION_SECRET || 'gizli-anahtar-123',
     resave: false,
     saveUninitialized: false,
     name: 'ogrenci.sid',
-    store: {
-        get: (sid, cb) => cb(null, sessions.get(sid) || null),
-        set: (sid, sess, cb) => { sessions.set(sid, sess); cb(); },
-        destroy: (sid, cb) => { sessions.delete(sid); cb(); }
-    },
+    store: new SimpleStore(),
     cookie: {
         secure: isProduction,
         httpOnly: true,
