@@ -170,18 +170,31 @@ const db = mysql.createConnection({
 
 let dbReady = false;
 
-db.connect((err) => {
-    if (err) {
-        console.error('Veritabanı bağlantısı kurulamadı:', err.message);
-        console.error('Lütfen .env içindeki DB_HOST, DB_USER, DB_PASSWORD ve DB_NAME değerlerini kontrol edin.');
-        console.error('Sunucu yine de başlatılıyor; veritabanı gerektiren işlemler çalışmayabilir.');
-        startServer();
-        return;
-    }
-    dbReady = true;
-    console.log('MySQL bağlandı');
-    veritabaniHazirla(() => startServer());
-});
+let connectionAttempts = 0;
+const maxAttempts = 30;
+const retryDelay = 5000; // 5 saniye
+
+function connectDB() {
+    connectionAttempts++;
+    db.connect((err) => {
+        if (err) {
+            console.error(`Bağlantı denemesi ${connectionAttempts}/${maxAttempts} başarısız:`, err.message);
+            if (connectionAttempts < maxAttempts) {
+                console.log(`${retryDelay/1000} saniye sonra tekrar deneniyor...`);
+                setTimeout(connectDB, retryDelay);
+            } else {
+                console.error('Maksimum deneme sayısına ulaşıldı. Sunucu başlatılıyor...');
+                startServer();
+            }
+            return;
+        }
+        dbReady = true;
+        console.log('MySQL bağlandı');
+        veritabaniHazirla(() => startServer());
+    });
+}
+
+connectDB();
 db.on('error', (err) => console.error('MySQL:', err.code, err.message));
 
 function findUserById(id, done) {
