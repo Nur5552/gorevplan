@@ -224,14 +224,13 @@ function connectDB() {
                 console.log(`${retryDelay/1000} saniye sonra tekrar deneniyor...`);
                 setTimeout(connectDB, retryDelay);
             } else {
-                console.error('Maksimum deneme sayısına ulaşıldı. Sunucu başlatılıyor...');
-                startServer();
+                console.error('Maksimum deneme sayısına ulaşıldı. Veritabanı bağlantısı kurulamadı.');
             }
             return;
         }
         dbReady = true;
         console.log('MySQL bağlandı');
-        veritabaniHazirla(() => startServer());
+        veritabaniHazirla();
     });
 }
 
@@ -730,20 +729,6 @@ app.put('/api/admin/yardim-talepleri/:id/durum', girisKontrol, adminKontrol, (re
 app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
 const PORT = Number(process.env.PORT || 8080);
-function startServer() {
-    const dene = (port, deneme) => {
-        const server = app.listen(port, () => console.log(`http://localhost:${port}`));
-        server.on('error', (err) => {
-            if (err && err.code === 'EADDRINUSE' && deneme < 5) {
-                const yeniPort = port + 1;
-                console.warn(`Port ${port} kullanımda, ${yeniPort} deneniyor...`);
-                return dene(yeniPort, deneme + 1);
-            }
-            throw err;
-        });
-    };
-    dene(PORT, 0);
-}
 
 app.listen(PORT, () => {
     console.log(`Server ${PORT} portunda çalışıyor`);
