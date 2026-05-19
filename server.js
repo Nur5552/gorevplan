@@ -8,13 +8,12 @@ const passport = require('passport');
 const bodyParser = require('body-parser');
 const rateLimit = require('express-rate-limit');
 const path = require('path');
-const { EventEmitter } = require('events');
 const { Strategy: GoogleStrategy } = require('passport-google-oauth20');
 const GitHubStrategy = require('passport-github2').Strategy;
 const FacebookStrategy = require('passport-facebook').Strategy;
 
 const app = express();
-const BASE_URL = (process.env.BASE_URL || 'https://www.gorevplan.com.tr').replace(/\/$/, '');
+const BASE_URL = (process.env.BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
 const GOREV_DURUMLARI = ['bekliyor', 'devam_ediyor', 'tamamlandi'];
 const TAMAMLAMA_PUANI = 15;
 const FORUM_URL = process.env.FORUM_URL || 'https://www.reddit.com/r/GetStudying/';
@@ -65,37 +64,6 @@ function siraSorgu(liste, bitti) {
 
 function veritabaniHazirla(cb) {
     const adimlar = [
-        {
-            sql: `CREATE TABLE IF NOT EXISTS kullanicilar (
-                id INT UNSIGNED NOT NULL AUTO_INCREMENT,
-                ad VARCHAR(100) NOT NULL,
-                soyad VARCHAR(100) NOT NULL,
-                kullanici_adi VARCHAR(100) NOT NULL UNIQUE,
-                sifre VARCHAR(255) NULL,
-                rol VARCHAR(32) NOT NULL DEFAULT 'kullanici',
-                google_id VARCHAR(64) NULL UNIQUE,
-                github_id VARCHAR(64) NULL UNIQUE,
-                facebook_id VARCHAR(64) NULL UNIQUE,
-                olusturma_tarihi TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (id),
-                KEY idx_kullanici_adi (kullanici_adi)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
-        },
-        {
-            sql: `CREATE TABLE IF NOT EXISTS gorevler (
-                id INT UNSIGNED NOT NULL AUTO_INCREMENT,
-                kullanici_id INT UNSIGNED NOT NULL,
-                gorev_adi VARCHAR(255) NOT NULL,
-                aciklama TEXT NULL,
-                son_tarih DATE NULL,
-                durum ENUM('bekliyor','devam_ediyor','tamamlandi') NOT NULL DEFAULT 'bekliyor',
-                olusturma_tarihi TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-                PRIMARY KEY (id),
-                KEY idx_gorev_kullanici (kullanici_id),
-                CONSTRAINT fk_gorev_kullanici FOREIGN KEY (kullanici_id) REFERENCES kullanicilar (id)
-                    ON DELETE CASCADE ON UPDATE CASCADE
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
-        },
         {
             sql: `CREATE TABLE IF NOT EXISTS kullanici_odul (
                 kullanici_id INT UNSIGNED NOT NULL,
@@ -168,20 +136,11 @@ function veritabaniHazirla(cb) {
 
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
-const sessions = new Map();
-
-class SimpleStore extends EventEmitter {
-    get(sid, cb) { cb(null, sessions.get(sid) || null); }
-    set(sid, sess, cb) { sessions.set(sid, sess); cb(); }
-    destroy(sid, cb) { sessions.delete(sid); cb(); }
-}
-
 app.use(session({
     secret: process.env.SESSION_SECRET || 'gizli-anahtar-123',
     resave: false,
     saveUninitialized: false,
     name: 'ogrenci.sid',
-    store: new SimpleStore(),
     cookie: {
         secure: isProduction,
         httpOnly: true,
@@ -202,7 +161,7 @@ const authLimiter = rateLimit({
 });
 
 const db = mysql.createConnection({
-    host: process.env.DB_HOST || 'MySQL-FEJV.railway.internal',
+    host: process.env.DB_HOST || '127.0.0.1',
     user: process.env.DB_USER || 'root',
     password: process.env.DB_PASSWORD != null ? String(process.env.DB_PASSWORD) : '',
     database: process.env.DB_NAME || 'ogrenci_takip',
@@ -211,30 +170,18 @@ const db = mysql.createConnection({
 
 let dbReady = false;
 
-let connectionAttempts = 0;
-const maxAttempts = 30;
-const retryDelay = 5000; // 5 saniye
-
-function connectDB() {
-    connectionAttempts++;
-    db.connect((err) => {
-        if (err) {
-            console.error(`Bağlantı denemesi ${connectionAttempts}/${maxAttempts} başarısız:`, err.message);
-            if (connectionAttempts < maxAttempts) {
-                console.log(`${retryDelay/1000} saniye sonra tekrar deneniyor...`);
-                setTimeout(connectDB, retryDelay);
-            } else {
-                console.error('Maksimum deneme sayısına ulaşıldı. Veritabanı bağlantısı kurulamadı.');
-            }
-            return;
-        }
-        dbReady = true;
-        console.log('MySQL bağlandı');
-        veritabaniHazirla();
-    });
-}
-
-connectDB();
+db.connect((err) => {
+    if (err) {
+        console.error('Veritabanı bağlantısı kurulamadı:', err.message);
+        console.error('Lütfen .env içindeki DB_HOST, DB_USER, DB_PASSWORD ve DB_NAME değerlerini kontrol edin.');
+        console.error('Sunucu yine de başlatılıyor; veritabanı gerektiren işlemler çalışmayabilir.');
+        startServer();
+        return;
+    }
+    dbReady = true;
+    console.log('MySQL bağlandı');
+    veritabaniHazirla(() => startServer());
+});
 db.on('error', (err) => console.error('MySQL:', err.code, err.message));
 
 function findUserById(id, done) {
@@ -395,23 +342,44 @@ app.get('/auth/github/callback', passport.authenticate('github', { failureRedire
 app.get('/auth/facebook', (req, res, next) => { req.oauthProvider = 'facebook'; next(); }, oauthRedirectKapali, passport.authenticate('facebook', { scope: ['public_profile'] }));
 app.get('/auth/facebook/callback', passport.authenticate('facebook', { failureRedirect: '/giris.html?oauth=hata' }), oturumuAyarla);
 
-function tanitimGonder(res) {
-    const p = path.join(__dirname, 'public', 'tanitim.html');
+const PUBLIC_DIR = path.join(__dirname, 'public');
+
+function publicDosyaGonder(dosya, res) {
+    const p = path.join(PUBLIC_DIR, dosya);
     if (!fs.existsSync(p)) {
-        return res.status(200).type('html').send('<!DOCTYPE html><html lang="tr"><head><meta charset="UTF-8"><title>Görev Takip</title></head><body style="font-family:sans-serif;padding:2rem;background:#1a1a2e;color:#fff"><h1>Görev Takip</h1><p><a href="/giris.html" style="color:#a78bfa">Giriş yap</a></p><p><small>tanitim.html bulunamadı — public klasörünü kontrol edin.</small></p></body></html>');
+        return res.status(404).type('html').send(
+            '<!DOCTYPE html><html lang="tr"><head><meta charset="UTF-8"><title>Eksik dosya</title></head>' +
+            '<body style="font-family:sans-serif;padding:2rem"><h1>Sayfa bulunamadı</h1>' +
+            `<p><code>public/${dosya}</code> sunucuda yok. Deploy sırasında <code>public/</code> klasörünün yüklendiğinden emin olun.</p></body></html>`
+        );
     }
     res.sendFile(path.resolve(p), (err) => {
         if (err) {
-            console.error('tanitim.html:', err.message);
+            console.error(dosya + ':', err.message);
             if (!res.headersSent) res.status(500).send('Sayfa gönderilemedi.');
         }
     });
 }
 
+function tanitimGonder(res) {
+    publicDosyaGonder('tanitim.html', res);
+}
+
+function publicKlasorunuKontrolEt() {
+    const gerekli = ['giris.html', 'tanitim.html', 'index.html', 'style.css'];
+    const eksik = gerekli.filter((f) => !fs.existsSync(path.join(PUBLIC_DIR, f)));
+    if (eksik.length) {
+        console.error('Eksik public dosyaları:', eksik.join(', '));
+        console.error('GitHub / Railway deploy\'a public/ klasörünü ekleyip yeniden yayınlayın.');
+    }
+}
+
 app.get('/', (req, res) => tanitimGonder(res));
 app.get('/tanitim.html', (req, res) => tanitimGonder(res));
-app.get('/panel', girisKontrol, (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
-app.get('/index.html', girisKontrol, (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+app.get('/giris.html', (req, res) => publicDosyaGonder('giris.html', res));
+app.get('/giris', (req, res) => res.redirect(301, '/giris.html'));
+app.get('/panel', girisKontrol, (req, res) => publicDosyaGonder('index.html', res));
+app.get('/index.html', girisKontrol, (req, res) => publicDosyaGonder('index.html', res));
 
 app.post('/api/kayit', authLimiter, async (req, res) => {
     const { ad, soyad, kullanici_adi, sifre } = req.body;
@@ -618,7 +586,7 @@ app.post('/api/yardim', girisKontrol, (req, res) => {
     res.json({ basarili: false, mesaj: 'Geçersiz talep türü.' });
 });
 
-app.get('/admin', girisKontrol, adminKontrol, (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
+app.get('/admin', girisKontrol, adminKontrol, (req, res) => publicDosyaGonder('admin.html', res));
 
 app.get('/api/admin/istatistikler', girisKontrol, adminKontrol, (req, res) => {
     const sayimSql = `
@@ -726,10 +694,24 @@ app.put('/api/admin/yardim-talepleri/:id/durum', girisKontrol, adminKontrol, (re
     );
 });
 
-app.use(express.static(path.join(__dirname, 'public'), { index: false }));
+app.use(express.static(PUBLIC_DIR, { index: false }));
 
-const PORT = Number(process.env.PORT || 8080);
-
-app.listen(PORT, () => {
-    console.log(`Server ${PORT} portunda çalışıyor`);
-});
+const PORT = Number(process.env.PORT || 3000);
+function startServer() {
+    publicKlasorunuKontrolEt();
+    const dinle = (port, deneme) => {
+        const server = app.listen(port, '0.0.0.0', () => {
+            console.log(`Sunucu hazır (port ${port})`);
+        });
+        server.on('error', (err) => {
+            if (err && err.code === 'EADDRINUSE' && !isProduction && deneme < 5) {
+                const yeniPort = port + 1;
+                console.warn(`Port ${port} dolu, ${yeniPort} deneniyor...`);
+                return dinle(yeniPort, deneme + 1);
+            }
+            console.error('Sunucu başlatılamadı:', err.message);
+            process.exit(1);
+        });
+    };
+    dinle(PORT, 0);
+}

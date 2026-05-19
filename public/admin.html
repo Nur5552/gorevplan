@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Paneli - Öğrenci Görev Takip</title>
+    <script src="js/theme.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+       
+        <header class="header">
+            <div class="header-left">
+                <span class="logo-icon">📊</span>
+                <h1>Admin Paneli</h1>
+            </div>
+            <div class="header-right">
+                <button type="button" class="btn btn-secondary btn-theme" data-theme-toggle aria-pressed="false">Karanlik Mod</button>
+                <a href="/panel" class="btn btn-secondary">Ana Sayfa</a>
+                <a href="/api/cikis" class="btn btn-logout">Çıkış Yap</a>
+            </div>
+        </header>
+
+       
+        <main class="main-content">
+           
+            <div class="stats">
+                <div class="stat-card">
+                    <span class="stat-icon">👥</span>
+                    <div class="stat-info">
+                        <span class="stat-number" id="toplam-kullanici">0</span>
+                        <span class="stat-label">Toplam Kullanıcı</span>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-icon">🔵</span>
+                    <div class="stat-info">
+                        <span class="stat-number" id="aktif-kullanici">0</span>
+                        <span class="stat-label">Aktif Kullanıcı</span>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-icon">📋</span>
+                    <div class="stat-info">
+                        <span class="stat-number" id="toplam-gorev">0</span>
+                        <span class="stat-label">Toplam Görev</span>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-icon">✅</span>
+                    <div class="stat-info">
+                        <span class="stat-number" id="tamamlanan-gorev">0</span>
+                        <span class="stat-label">Tamamlanan</span>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-icon">💬</span>
+                    <div class="stat-info">
+                        <span class="stat-number" id="ucretli-yardim">0</span>
+                        <span class="stat-label">Ücretli yardım talebi</span>
+                    </div>
+                </div>
+            </div>
+
+            
+            <div class="admin-panels">
+                <div class="panel">
+                    <h2>Kullanıcılar</h2>
+                    <div id="kullanici-listesi" class="list-container">
+                        <p>Yükleniyor...</p>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <h2>Tüm Görevler</h2>
+                    <div id="gorev-listesi" class="list-container">
+                        <p>Yükleniyor...</p>
+                    </div>
+                </div>
+
+                <div class="panel admin-yardim-panel">
+                    <h2>Yardım talepleri (moderatör + admin)</h2>
+                    <p class="admin-yardim-not">Ücretli satırlar moderatörlere atanır ve yönetici bu listeden takip eder. Ücretsiz forum tıklamaları isteğe bağlı kayda geçer.</p>
+                    <div class="admin-filter-grid">
+                        <div class="input-group">
+                            <label for="yardim-filtre-kullanici">Kullanıcı</label>
+                            <input type="text" id="yardim-filtre-kullanici" placeholder="Ad, soyad veya @kullanıcı">
+                        </div>
+                        <div class="input-group">
+                            <label for="yardim-filtre-durum">Durum</label>
+                            <select id="yardim-filtre-durum">
+                                <option value="">Hepsi</option>
+                                <option value="yeni">Yeni</option>
+                                <option value="inceleniyor">İnceleniyor</option>
+                                <option value="cozuldu">Çözüldü</option>
+                            </select>
+                        </div>
+                        <div class="input-group">
+                            <label for="yardim-filtre-baslangic">Başlangıç tarihi</label>
+                            <input type="date" id="yardim-filtre-baslangic">
+                        </div>
+                        <div class="input-group">
+                            <label for="yardim-filtre-bitis">Bitiş tarihi</label>
+                            <input type="date" id="yardim-filtre-bitis">
+                        </div>
+                    </div>
+                    <div class="admin-filter-actions">
+                        <button type="button" class="btn btn-secondary" id="yardim-filtre-uygula">Filtrele</button>
+                        <button type="button" class="btn btn-secondary" id="yardim-filtre-temizle">Temizle</button>
+                    </div>
+                    <p id="yardim-durum-mesaj" class="yardim-kucuk"></p>
+                    <div id="yardim-listesi" class="list-container">
+                        <p>Yükleniyor...</p>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="js/gorev-zamanlayici.js"></script>
+    <script>
+        temaButonlariniHazirla();
+        
+        
+        const yardimFiltre = {
+            kullanici: '',
+            durum: '',
+            baslangic: '',
+            bitis: ''
+        };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            istatistikleriGetir();
+            kullanicilariGetir();
+            gorevleriGetir();
+            filtreleriAyarla();
+            yardimTalepleriniGetir();
+        });
+
+        
+        async function istatistikleriGetir() {
+            try {
+                const response = await fetch('/api/admin/istatistikler', { credentials: 'same-origin' });
+                if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) {
+                    window.location.href = '/giris.html';
+                    return;
+                }
+                const data = await response.json();
+                
+                if (data.basarili) {
+                    document.getElementById('toplam-kullanici').textContent = data.istatistikler.toplamKullanici;
+                    document.getElementById('aktif-kullanici').textContent = data.istatistikler.aktifKullanici;
+                    document.getElementById('toplam-gorev').textContent = data.istatistikler.toplamGorev;
+                    
+                    const tamamlanan = data.istatistikler.gorevDurumlari.find(d => d.durum === 'tamamlandi');
+                    document.getElementById('tamamlanan-gorev').textContent = tamamlanan ? tamamlanan.sayi : 0;
+                    const uy = document.getElementById('ucretli-yardim');
+                    if (uy && data.istatistikler.ucretliYardimTalebi != null) {
+                        uy.textContent = data.istatistikler.ucretliYardimTalebi;
+                    }
+                }
+            } catch (error) {
+                console.error('İstatistik hatası:', error);
+            }
+        }
+
+        
+        async function kullanicilariGetir() {
+            try {
+                const response = await fetch('/api/admin/kullanicilar', { credentials: 'same-origin' });
+                if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) {
+                    window.location.href = '/giris.html';
+                    return;
+                }
+                const data = await response.json();
+                
+                if (data.basarili) {
+                    const liste = document.getElementById('kullanici-listesi');
+                    if (data.kullanicilar.length === 0) {
+                        liste.innerHTML = '<p>Henüz kullanıcı yok.</p>';
+                        return;
+                    }
+                    
+                    liste.innerHTML = data.kullanicilar.map(k => `
+                        <div class="list-item">
+                            <div class="item-info">
+                                <strong>${k.ad} ${k.soyad}</strong>
+                                <span>@${k.kullanici_adi}</span>
+                            </div>
+                        </div>
+                    `).join('');
+                }
+            } catch (error) {
+                console.error('Kullanıcı hatası:', error);
+            }
+        }
+
+       
+        async function gorevleriGetir() {
+            try {
+                const response = await fetch('/api/admin/gorevler', { credentials: 'same-origin' });
+                if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) {
+                    window.location.href = '/giris.html';
+                    return;
+                }
+                const data = await response.json();
+                
+                if (data.basarili) {
+                    const liste = document.getElementById('gorev-listesi');
+                    if (data.gorevler.length === 0) {
+                        liste.innerHTML = '<p>Henüz görev yok.</p>';
+                        if (typeof gorevZamanlayiciBaslat === 'function') gorevZamanlayiciBaslat();
+                        return;
+                    }
+                    
+                    liste.innerHTML = data.gorevler.map(g => `
+                        <div class="list-item">
+                            <div class="item-info">
+                                <strong>${g.gorev_adi}</strong>
+                                <span>${g.ad} ${g.soyad} (@${g.kullanici_adi})</span>
+                                ${g.aciklama ? `<p>${g.aciklama}</p>` : ''}
+                                <div class="item-meta">
+                                    ${g.son_tarih ? `<span>📅 ${tarihFormat(g.son_tarih)}</span>` : ''}
+                                    ${g.son_tarih && g.durum !== 'tamamlandi' ? `<span class="gorev-kalan-sure" data-son-tarih="${window.gorevZamanNormalizeSon(g.son_tarih)}" data-durum="${g.durum}" aria-live="polite"></span>` : ''}
+                                    <span class="durum-badge ${g.durum}">${durumYazi(g.durum)}</span>
+                                </div>
+                            </div>
+                        </div>
+                    `).join('');
+                    if (typeof gorevZamanlayiciBaslat === 'function') gorevZamanlayiciBaslat();
+                }
+            } catch (error) {
+                console.error('Görev hatası:', error);
+            }
+        }
+
+        
+        function tarihFormat(tarih) {
+            return new Date(tarih).toLocaleDateString('tr-TR');
+        }
+
+        function filtreleriAyarla() {
+            const uygulaBtn = document.getElementById('yardim-filtre-uygula');
+            const temizleBtn = document.getElementById('yardim-filtre-temizle');
+            if (uygulaBtn) {
+                uygulaBtn.addEventListener('click', yardimFiltreUygula);
+            }
+            if (temizleBtn) {
+                temizleBtn.addEventListener('click', yardimFiltreTemizle);
+            }
+            ['yardim-filtre-kullanici', 'yardim-filtre-durum', 'yardim-filtre-baslangic', 'yardim-filtre-bitis'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    el.addEventListener('keydown', (e) => {
+                        if (e.key === 'Enter') {
+                            e.preventDefault();
+                            yardimFiltreUygula();
+                        }
+                    });
+                }
+            });
+        }
+
+        function yardimFiltreUygula() {
+            const k = document.getElementById('yardim-filtre-kullanici');
+            const d = document.getElementById('yardim-filtre-durum');
+            const b1 = document.getElementById('yardim-filtre-baslangic');
+            const b2 = document.getElementById('yardim-filtre-bitis');
+            yardimFiltre.kullanici = k ? k.value.trim() : '';
+            yardimFiltre.durum = d ? d.value : '';
+            yardimFiltre.baslangic = b1 ? b1.value : '';
+            yardimFiltre.bitis = b2 ? b2.value : '';
+            if (yardimFiltre.baslangic && yardimFiltre.bitis && yardimFiltre.baslangic > yardimFiltre.bitis) {
+                yardimMesajYaz('Başlangıç tarihi, bitiş tarihinden büyük olamaz.', false);
+                return;
+            }
+            yardimMesajYaz('', true);
+            yardimTalepleriniGetir();
+        }
+
+        function yardimFiltreTemizle() {
+            ['yardim-filtre-kullanici', 'yardim-filtre-durum', 'yardim-filtre-baslangic', 'yardim-filtre-bitis'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.value = '';
+            });
+            yardimFiltre.kullanici = '';
+            yardimFiltre.durum = '';
+            yardimFiltre.baslangic = '';
+            yardimFiltre.bitis = '';
+            yardimMesajYaz('', true);
+            yardimTalepleriniGetir();
+        }
+
+        function yardimMesajYaz(mesaj, basarili) {
+            const m = document.getElementById('yardim-durum-mesaj');
+            if (!m) return;
+            m.textContent = mesaj || '';
+            m.className = 'yardim-kucuk ' + (mesaj ? (basarili ? 'yardim-ok' : 'yardim-hata') : '');
+        }
+
+        async function yardimTalepleriniGetir() {
+            try {
+                const qs = new URLSearchParams();
+                if (yardimFiltre.kullanici) qs.set('kullanici', yardimFiltre.kullanici);
+                if (yardimFiltre.durum) qs.set('durum', yardimFiltre.durum);
+                if (yardimFiltre.baslangic) qs.set('baslangic', yardimFiltre.baslangic);
+                if (yardimFiltre.bitis) qs.set('bitis', yardimFiltre.bitis);
+                const response = await fetch('/api/admin/yardim-talepleri?' + qs.toString(), { credentials: 'same-origin' });
+                if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) {
+                    return;
+                }
+                const data = await response.json();
+                const liste = document.getElementById('yardim-listesi');
+                if (!data.basarili || !liste) return;
+                if (!data.talepler.length) {
+                    liste.innerHTML = '<p>Henüz talep yok.</p>';
+                    return;
+                }
+                liste.innerHTML = data.talepler.map(t => `
+                    <div class="list-item ${t.tur === 'ucretli' ? 'yardim-ucretli' : ''}">
+                        <div class="item-info">
+                            <strong>${t.tur === 'ucretli' ? 'Ücretli' : 'Ücretsiz / forum'}</strong>
+                            <span>${t.ad} ${t.soyad} (@${t.kullanici_adi})</span>
+                            ${t.konu ? `<p><strong>Konu:</strong> ${escapeHtml(t.konu)}</p>` : ''}
+                            <p>${escapeHtml(t.mesaj)}</p>
+                            <div class="item-meta">
+                                <span>${tarihSaat(t.olusturma_tarihi)}</span>
+                                <span class="yardim-durum-badge ${t.durum || 'yeni'}">${yardimDurumYazi(t.durum)}</span>
+                            </div>
+                            <div class="admin-durum-row">
+                                <select class="durum-select" id="yardim-durum-${t.id}">
+                                    <option value="yeni" ${t.durum === 'yeni' ? 'selected' : ''}>Yeni</option>
+                                    <option value="inceleniyor" ${t.durum === 'inceleniyor' ? 'selected' : ''}>İnceleniyor</option>
+                                    <option value="cozuldu" ${t.durum === 'cozuldu' ? 'selected' : ''}>Çözüldü</option>
+                                </select>
+                                <button type="button" class="btn btn-secondary" onclick="yardimDurumGuncelle(${t.id})">Durumu Kaydet</button>
+                            </div>
+                        </div>
+                    </div>
+                `).join('');
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        function escapeHtml(s) {
+            if (s == null) return '';
+            const d = document.createElement('div');
+            d.textContent = s;
+            return d.innerHTML;
+        }
+
+        function tarihSaat(t) {
+            return new Date(t).toLocaleString('tr-TR');
+        }
+
+        function yardimDurumYazi(d) {
+            const m = {
+                yeni: '🆕 Yeni',
+                inceleniyor: '🕵️ İnceleniyor',
+                cozuldu: '✅ Çözüldü'
+            };
+            return m[d] || '🆕 Yeni';
+        }
+
+        async function yardimDurumGuncelle(id) {
+            const secim = document.getElementById(`yardim-durum-${id}`);
+            if (!secim) return;
+            try {
+                const response = await fetch(`/api/admin/yardim-talepleri/${id}/durum`, {
+                    method: 'PUT',
+                    credentials: 'same-origin',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ durum: secim.value })
+                });
+                if (!response.ok || !response.headers.get('content-type')?.includes('application/json')) {
+                    yardimMesajYaz('Sunucudan geçerli yanıt alınamadı.', false);
+                    return;
+                }
+                const data = await response.json();
+                if (!data.basarili) {
+                    yardimMesajYaz(data.mesaj || 'Durum güncellenemedi.', false);
+                    return;
+                }
+                yardimMesajYaz(data.mesaj || 'Durum güncellendi.', true);
+                yardimTalepleriniGetir();
+            } catch (e) {
+                console.error(e);
+                yardimMesajYaz('Durum güncellenirken hata oluştu.', false);
+            }
+        }
+
+        // Durum yazısı
+        function durumYazi(durum) {
+            const durumlar = {
+                'bekliyor': '⏳ Bekliyor',
+                'devam_ediyor': '🔄 Devam Ediyor',
+                'tamamlandi': '✅ Tamamlandı'
+            };
+            return durumlar[durum] || durum;
+        }
+    </script>
+</body>
+</html>
