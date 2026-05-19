@@ -686,20 +686,10 @@ app.put('/api/admin/yardim-talepleri/:id/durum', girisKontrol, adminKontrol, (re
     );
 });
 
-app.use(express.static(path.join(__dirname, 'public'), { index: false }));
-
-const PORT = Number(process.env.PORT || 3000);
 function startServer() {
-    const dene = (port, deneme) => {
-        const server = app.listen(port, () => console.log(`http://localhost:${port}`));
-        server.on('error', (err) => {
-            if (err && err.code === 'EADDRINUSE' && deneme < 5) {
-                const yeniPort = port + 1;
-                console.warn(`Port ${port} kullanımda, ${yeniPort} deneniyor...`);
-                return dene(yeniPort, deneme + 1);
-            }
-            throw err;
-        });
-    };
-    dene(PORT, 0);
+    const PORT = process.env.PORT || 8080;
+    app.use(express.static(path.join(__dirname, 'public')));
+    app.listen(PORT, () => {
+        console.log(`Server http://localhost:${PORT} adresinde başlatıldı`);
+    });
 }
