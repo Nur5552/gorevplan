@@ -22,25 +22,59 @@ if (isProduction) {
     app.set('trust proxy', 1);
 }
 
+const SEVIYE_ESIKLER = [
+    { kod: 'baslangic', etiket: 'Başlangıç', puan: 0 },
+    { kod: 'cirak', etiket: 'Çırak', puan: 40 },
+    { kod: 'ogrenci', etiket: 'Öğrenci', puan: 90 },
+    { kod: 'caliskan', etiket: 'Çalışkan', puan: 160 },
+    { kod: 'azimli', etiket: 'Azimli', puan: 250 },
+    { kod: 'kararli', etiket: 'Kararlı', puan: 370 },
+    { kod: 'uzman', etiket: 'Uzman', puan: 520 },
+    { kod: 'kahraman', etiket: 'Kahraman', puan: 700 },
+    { kod: 'efsane', etiket: 'Efsane', puan: 950 },
+    { kod: 'sampiyon', etiket: 'Şampiyon', puan: 1250 }
+];
+
 function seviyeKodu(puan) {
     const p = Number(puan) || 0;
-    if (p >= 300) return 'sampiyon';
-    if (p >= 150) return 'azimli';
-    if (p >= 50) return 'caliskan';
-    return 'baslangic';
+    let kod = 'baslangic';
+    for (const s of SEVIYE_ESIKLER) {
+        if (p >= s.puan) kod = s.kod;
+    }
+    return kod;
 }
 
 function seviyeEtiket(kod) {
-    const m = { baslangic: 'Başlangıç', caliskan: 'Çalışkan', azimli: 'Azimli', sampiyon: 'Şampiyon' };
-    return m[kod] || kod;
+    const bul = SEVIYE_ESIKLER.find((s) => s.kod === kod);
+    return bul ? bul.etiket : kod;
 }
 
 function sonrakiEsik(puan) {
     const p = Number(puan) || 0;
-    if (p < 50) return { hedef: 50, kalan: Math.max(0, 50 - p) };
-    if (p < 150) return { hedef: 150, kalan: Math.max(0, 150 - p) };
-    if (p < 300) return { hedef: 300, kalan: Math.max(0, 300 - p) };
+    for (const s of SEVIYE_ESIKLER) {
+        if (p < s.puan) return { hedef: s.puan, kalan: Math.max(0, s.puan - p) };
+    }
     return { hedef: null, kalan: 0 };
+}
+
+function seviyeIlerlemeYuzde(puan) {
+    const p = Number(puan) || 0;
+    const ust = SEVIYE_ESIKLER[SEVIYE_ESIKLER.length - 1].puan;
+    if (p >= ust) {
+        return { yuzde: 100, onceki: ust, sonraki: null };
+    }
+    let onceki = 0;
+    let sonraki = SEVIYE_ESIKLER[1].puan;
+    for (let i = 0; i < SEVIYE_ESIKLER.length; i++) {
+        if (p < SEVIYE_ESIKLER[i].puan) {
+            sonraki = SEVIYE_ESIKLER[i].puan;
+            onceki = i > 0 ? SEVIYE_ESIKLER[i - 1].puan : 0;
+            break;
+        }
+    }
+    const aralik = sonraki - onceki;
+    const yuzde = aralik > 0 ? Math.min(100, Math.round(((p - onceki) / aralik) * 100)) : 100;
+    return { yuzde, onceki, sonraki };
 }
 
 function yoksay(e, kodlar) {
@@ -64,6 +98,36 @@ function siraSorgu(liste, bitti) {
 
 function veritabaniHazirla(cb) {
     const adimlar = [
+        {
+            sql: `CREATE TABLE IF NOT EXISTS kullanicilar (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+                ad VARCHAR(100) NOT NULL,
+                soyad VARCHAR(100) NOT NULL,
+                kullanici_adi VARCHAR(64) NOT NULL,
+                sifre VARCHAR(255) NULL,
+                rol VARCHAR(32) NOT NULL DEFAULT 'kullanici',
+                google_id VARCHAR(64) NULL DEFAULT NULL,
+                github_id VARCHAR(64) NULL DEFAULT NULL,
+                facebook_id VARCHAR(64) NULL DEFAULT NULL,
+                PRIMARY KEY (id),
+                UNIQUE KEY uk_kullanici_adi (kullanici_adi)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+        },
+        {
+            sql: `CREATE TABLE IF NOT EXISTS gorevler (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+                kullanici_id INT UNSIGNED NOT NULL,
+                gorev_adi VARCHAR(255) NOT NULL,
+                aciklama TEXT NULL,
+                son_tarih DATETIME NULL,
+                durum ENUM('bekliyor', 'devam_ediyor', 'tamamlandi') NOT NULL DEFAULT 'bekliyor',
+                olusturma_tarihi TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                KEY idx_gorevler_kullanici (kullanici_id),
+                CONSTRAINT fk_gorevler_kullanici FOREIGN KEY (kullanici_id) REFERENCES kullanicilar (id)
+                    ON DELETE CASCADE ON UPDATE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+        },
         {
             sql: `CREATE TABLE IF NOT EXISTS kullanici_odul (
                 kullanici_id INT UNSIGNED NOT NULL,
@@ -119,12 +183,39 @@ function veritabaniHazirla(cb) {
             yoksay: (e) => yoksay(e, ['ER_DUP_KEYNAME'])
         },
         {
+            sql: 'ALTER TABLE gorevler MODIFY COLUMN son_tarih DATETIME NULL',
+            yoksay: (e) => yoksay(e, ['ER_BAD_FIELD_ERROR'])
+        },
+        {
             sql: 'CREATE UNIQUE INDEX uk_github_id ON kullanicilar (github_id)',
             yoksay: (e) => yoksay(e, ['ER_DUP_KEYNAME'])
         },
         {
             sql: 'CREATE UNIQUE INDEX uk_facebook_id ON kullanicilar (facebook_id)',
             yoksay: (e) => yoksay(e, ['ER_DUP_KEYNAME'])
+        },
+        {
+            sql: `CREATE TABLE IF NOT EXISTS vs_istekleri (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+                gonderen_id INT UNSIGNED NOT NULL,
+                alan_id INT UNSIGNED NOT NULL,
+                durum ENUM('bekliyor','kabul','red','iptal') NOT NULL DEFAULT 'bekliyor',
+                gonderen_bildirildi TINYINT(1) NOT NULL DEFAULT 0,
+                olusturma_tarihi TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                guncelleme_tarihi TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                KEY idx_vs_alan_durum (alan_id, durum),
+                KEY idx_vs_gonderen_durum (gonderen_id, durum),
+                CONSTRAINT fk_vs_gonderen FOREIGN KEY (gonderen_id) REFERENCES kullanicilar (id)
+                    ON DELETE CASCADE ON UPDATE CASCADE,
+                CONSTRAINT fk_vs_alan FOREIGN KEY (alan_id) REFERENCES kullanicilar (id)
+                    ON DELETE CASCADE ON UPDATE CASCADE
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`
+        },
+        {
+            sql: `ALTER TABLE vs_istekleri MODIFY COLUMN durum
+                ENUM('bekliyor','kabul','red','iptal','tamamlandi') NOT NULL DEFAULT 'bekliyor'`,
+            yoksay: (e) => yoksay(e, ['ER_BAD_FIELD_ERROR'])
         }
     ];
 
@@ -170,17 +261,58 @@ const db = mysql.createConnection({
 
 let dbReady = false;
 
+function dbBaglantiSonrasi() {
+    dbReady = true;
+    console.log('MySQL bağlandı:', process.env.DB_NAME || 'ogrenci_takip');
+    veritabaniHazirla((err) => {
+        if (err) console.warn('Şema uyarısı:', err.message);
+        startServer();
+    });
+}
+
+function veritabaniOlusturVeBaglan() {
+    const dbAdi = process.env.DB_NAME || 'ogrenci_takip';
+    const kurulum = mysql.createConnection({
+        host: process.env.DB_HOST || '127.0.0.1',
+        user: process.env.DB_USER || 'root',
+        password: process.env.DB_PASSWORD != null ? String(process.env.DB_PASSWORD) : '',
+        charset: 'utf8mb4'
+    });
+    kurulum.query(
+        `CREATE DATABASE IF NOT EXISTS \`${dbAdi.replace(/`/g, '')}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+        (err) => {
+            kurulum.end();
+            if (err) {
+                console.error('Veritabanı oluşturulamadı:', err.message);
+                startServer();
+                return;
+            }
+            console.log('Veritabanı hazır:', dbAdi);
+            db.connect((err2) => {
+                if (err2) {
+                    console.error('Yeniden bağlantı başarısız:', err2.message);
+                    startServer();
+                    return;
+                }
+                dbBaglantiSonrasi();
+            });
+        }
+    );
+}
+
 db.connect((err) => {
     if (err) {
-        console.error('Veritabanı bağlantısı kurulamadı:', err.message);
-        console.error('Lütfen .env içindeki DB_HOST, DB_USER, DB_PASSWORD ve DB_NAME değerlerini kontrol edin.');
-        console.error('Sunucu yine de başlatılıyor; veritabanı gerektiren işlemler çalışmayabilir.');
+        console.error('Veritabanı bağlantısı kurulamadı:', err.code, err.message);
+        if (err.code === 'ER_BAD_DB_ERROR') {
+            console.log('"' + (process.env.DB_NAME || 'ogrenci_takip') + '" bulunamadı; oluşturuluyor…');
+            veritabaniOlusturVeBaglan();
+            return;
+        }
+        console.error('Lütfen .env içindeki DB_HOST, DB_USER, DB_PASSWORD değerlerini ve MySQL servisini kontrol edin.');
         startServer();
         return;
     }
-    dbReady = true;
-    console.log('MySQL bağlandı');
-    veritabaniHazirla(() => startServer());
+    dbBaglantiSonrasi();
 });
 db.on('error', (err) => console.error('MySQL:', err.code, err.message));
 
@@ -342,44 +474,23 @@ app.get('/auth/github/callback', passport.authenticate('github', { failureRedire
 app.get('/auth/facebook', (req, res, next) => { req.oauthProvider = 'facebook'; next(); }, oauthRedirectKapali, passport.authenticate('facebook', { scope: ['public_profile'] }));
 app.get('/auth/facebook/callback', passport.authenticate('facebook', { failureRedirect: '/giris.html?oauth=hata' }), oturumuAyarla);
 
-const PUBLIC_DIR = path.join(__dirname, 'public');
-
-function publicDosyaGonder(dosya, res) {
-    const p = path.join(PUBLIC_DIR, dosya);
+function tanitimGonder(res) {
+    const p = path.join(__dirname, 'public', 'tanitim.html');
     if (!fs.existsSync(p)) {
-        return res.status(404).type('html').send(
-            '<!DOCTYPE html><html lang="tr"><head><meta charset="UTF-8"><title>Eksik dosya</title></head>' +
-            '<body style="font-family:sans-serif;padding:2rem"><h1>Sayfa bulunamadı</h1>' +
-            `<p><code>public/${dosya}</code> sunucuda yok. Deploy sırasında <code>public/</code> klasörünün yüklendiğinden emin olun.</p></body></html>`
-        );
+        return res.status(200).type('html').send('<!DOCTYPE html><html lang="tr"><head><meta charset="UTF-8"><title>Görev Takip</title></head><body style="font-family:sans-serif;padding:2rem;background:#1a1a2e;color:#fff"><h1>Görev Takip</h1><p><a href="/giris.html" style="color:#a78bfa">Giriş yap</a></p><p><small>tanitim.html bulunamadı — public klasörünü kontrol edin.</small></p></body></html>');
     }
     res.sendFile(path.resolve(p), (err) => {
         if (err) {
-            console.error(dosya + ':', err.message);
+            console.error('tanitim.html:', err.message);
             if (!res.headersSent) res.status(500).send('Sayfa gönderilemedi.');
         }
     });
 }
 
-function tanitimGonder(res) {
-    publicDosyaGonder('tanitim.html', res);
-}
-
-function publicKlasorunuKontrolEt() {
-    const gerekli = ['giris.html', 'tanitim.html', 'index.html', 'style.css'];
-    const eksik = gerekli.filter((f) => !fs.existsSync(path.join(PUBLIC_DIR, f)));
-    if (eksik.length) {
-        console.error('Eksik public dosyaları:', eksik.join(', '));
-        console.error('GitHub / Railway deploy\'a public/ klasörünü ekleyip yeniden yayınlayın.');
-    }
-}
-
 app.get('/', (req, res) => tanitimGonder(res));
 app.get('/tanitim.html', (req, res) => tanitimGonder(res));
-app.get('/giris.html', (req, res) => publicDosyaGonder('giris.html', res));
-app.get('/giris', (req, res) => res.redirect(301, '/giris.html'));
-app.get('/panel', girisKontrol, (req, res) => publicDosyaGonder('index.html', res));
-app.get('/index.html', girisKontrol, (req, res) => publicDosyaGonder('index.html', res));
+app.get('/panel', girisKontrol, (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
+app.get('/index.html', girisKontrol, (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 
 app.post('/api/kayit', authLimiter, async (req, res) => {
     const { ad, soyad, kullanici_adi, sifre } = req.body;
@@ -409,8 +520,18 @@ app.post('/api/giris', authLimiter, (req, res) => {
         return jsonHata(res, 400, 'Kullanıcı adı girin.');
     }
 
+    if (!dbReady) {
+        return jsonHata(res, 503, 'Veritabanı bağlantısı yok. MySQL çalışıyor mu? Sunucu konsoluna bakın.');
+    }
     db.query('SELECT * FROM kullanicilar WHERE LOWER(TRIM(kullanici_adi)) = LOWER(?)', [kaRaw], async (err, results) => {
-        if (err) return jsonHata(res, 500, 'Veritabanı hatası.');
+        if (err) {
+            console.error('Giriş sorgusu:', err.code, err.message);
+            const mesaj =
+                err.code === 'ER_NO_SUCH_TABLE'
+                    ? 'Tablolar eksik. Sunucuyu yeniden başlatın veya schema.sql dosyasını çalıştırın.'
+                    : 'Veritabanı hatası. MySQL ve .env ayarlarını kontrol edin.';
+            return jsonHata(res, 500, mesaj);
+        }
         if (!results || !results.length) return jsonHata(res, 401, 'Kullanıcı bulunamadı.');
         const kullanici = results[0];
         if (!kullanici.sifre) return jsonHata(res, 400, 'Sosyal giriş kullanın.');
@@ -447,7 +568,11 @@ app.post('/api/gorev-ekle', girisKontrol, (req, res) => {
         return res.json({ basarili: false, mesaj: 'Görev adı boş olamaz.' });
     }
     const aciklama = req.body.aciklama != null && String(req.body.aciklama).trim() !== '' ? String(req.body.aciklama).trim() : null;
-    const sonTarih = req.body.son_tarih != null && String(req.body.son_tarih).trim() !== '' ? String(req.body.son_tarih).trim() : null;
+    let sonTarih = req.body.son_tarih != null && String(req.body.son_tarih).trim() !== '' ? String(req.body.son_tarih).trim() : null;
+    if (sonTarih) {
+        sonTarih = sonTarih.replace('T', ' ');
+        if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(sonTarih)) sonTarih += ':00';
+    }
     const sql = 'INSERT INTO gorevler (kullanici_id, gorev_adi, aciklama, son_tarih, durum) VALUES (?,?,?,?,?)';
     db.query(sql, [req.session.kullanici.id, baslik, aciklama, sonTarih, 'bekliyor'], (err, result) => {
         if (err) return res.json({ basarili: false, mesaj: 'Görev eklenemedi' });
@@ -505,7 +630,8 @@ app.put('/api/gorev-guncelle/:id', girisKontrol, (req, res) => {
                                     seviye: sev,
                                     seviyeEtiket: seviyeEtiket(sev),
                                     kazanilanPuan: TAMAMLAMA_PUANI,
-                                    sonraki: sonrakiEsik(puan)
+                                    sonraki: sonrakiEsik(puan),
+                                    ilerleme: seviyeIlerlemeYuzde(puan)
                                 }
                             });
                         });
@@ -513,6 +639,323 @@ app.put('/api/gorev-guncelle/:id', girisKontrol, (req, res) => {
                 }
             );
         });
+    });
+});
+
+function liderlikSatirOlustur(row, sira, benimId) {
+    const puan = Number(row.puan) || 0;
+    const sev = seviyeKodu(puan);
+    const ad = String(row.ad || '').trim();
+    const soyad = String(row.soyad || '').trim();
+    return {
+        sira,
+        id: row.id,
+        ad,
+        soyad,
+        kullanici_adi: row.kullanici_adi,
+        gorunenAd: soyad ? `${ad} ${soyad}` : ad || row.kullanici_adi,
+        puan,
+        seviye: sev,
+        seviyeEtiket: seviyeEtiket(sev),
+        tamamlanan: Number(row.tamamlanan) || 0,
+        benMi: Number(row.id) === Number(benimId)
+    };
+}
+
+app.get('/api/liderlik', girisKontrol, (req, res) => {
+    const benimId = req.session.kullanici.id;
+    const sql = `
+        SELECT k.id, k.ad, k.soyad, k.kullanici_adi,
+            COALESCE(o.puan, 0) AS puan,
+            (SELECT COUNT(*) FROM gorevler g WHERE g.kullanici_id = k.id AND g.durum = 'tamamlandi') AS tamamlanan
+        FROM kullanicilar k
+        LEFT JOIN kullanici_odul o ON o.kullanici_id = k.id
+        WHERE COALESCE(k.rol, 'kullanici') <> 'admin'
+        ORDER BY puan DESC, tamamlanan DESC, k.kullanici_adi ASC`;
+    db.query(sql, (err, rows) => {
+        if (err) return res.json({ basarili: false, mesaj: 'Sıralama alınamadı' });
+        const ham = rows || [];
+        const liste = ham.map((r, i) => liderlikSatirOlustur(r, i + 1, benimId));
+        const ben = liste.find((u) => u.benMi) || null;
+        const benimSira = ben ? ben.sira : null;
+        const ust = benimSira ? liste.filter((u) => u.sira < benimSira).slice(-2) : [];
+        const alt = benimSira ? liste.filter((u) => u.sira > benimSira).slice(0, 2) : [];
+        const yakinRakipler = [...ust, ...(ben ? [ben] : []), ...alt].sort((a, b) => a.sira - b.sira);
+        const podyum = liste.slice(0, 3);
+        const birUst = benimSira && benimSira > 1 ? liste.find((u) => u.sira === benimSira - 1) : null;
+        res.json({
+            basarili: true,
+            benimSira,
+            toplamKullanici: liste.length,
+            ben: ben,
+            birUst,
+            podyum,
+            yakinRakipler,
+            liste
+        });
+    });
+});
+
+function vsKullaniciAdi(row) {
+    const ad = (row.ad || '').trim();
+    const soyad = (row.soyad || '').trim();
+    return soyad ? `${ad} ${soyad}` : ad || row.kullanici_adi || 'Öğrenci';
+}
+
+function vsIstekGonderenSatir(row) {
+    const sev = seviyeKodu(Number(row.puan) || 0);
+    return {
+        id: row.istek_id,
+        gonderenId: row.gonderen_id,
+        gorunenAd: vsKullaniciAdi(row),
+        kullanici_adi: row.kullanici_adi,
+        seviye: sev,
+        seviyeEtiket: seviyeEtiket(sev),
+        puan: Number(row.puan) || 0,
+        olusturma: row.olusturma_tarihi
+    };
+}
+
+app.get('/api/vs/ozet', girisKontrol, (req, res) => {
+    const uid = req.session.kullanici.id;
+    const gelenSql = `
+        SELECT v.id AS istek_id, v.gonderen_id, v.olusturma_tarihi,
+            k.ad, k.soyad, k.kullanici_adi, COALESCE(o.puan, 0) AS puan
+        FROM vs_istekleri v
+        INNER JOIN kullanicilar k ON k.id = v.gonderen_id
+        LEFT JOIN kullanici_odul o ON o.kullanici_id = k.id
+        WHERE v.alan_id = ? AND v.durum = 'bekliyor'
+        ORDER BY v.olusturma_tarihi DESC`;
+    const gidenSql = `
+        SELECT alan_id FROM vs_istekleri
+        WHERE gonderen_id = ? AND durum = 'bekliyor'`;
+    const baslatSql = `
+        SELECT id, alan_id FROM vs_istekleri
+        WHERE gonderen_id = ? AND durum = 'kabul' AND gonderen_bildirildi = 0
+        ORDER BY guncelleme_tarihi DESC LIMIT 1`;
+
+    db.query(gelenSql, [uid], (err, gelenRows) => {
+        if (err) return res.json({ basarili: false, mesaj: 'VS istekleri okunamadı' });
+        db.query(gidenSql, [uid], (e2, gidenRows) => {
+            if (e2) return res.json({ basarili: false, mesaj: 'VS istekleri okunamadı' });
+            db.query(baslatSql, [uid], (e3, baslatRows) => {
+                if (e3) return res.json({ basarili: false, mesaj: 'VS istekleri okunamadı' });
+                const baslat = baslatRows && baslatRows[0] ? baslatRows[0] : null;
+                res.json({
+                    basarili: true,
+                    gelen: (gelenRows || []).map(vsIstekGonderenSatir),
+                    gidenBekleyen: (gidenRows || []).map((r) => Number(r.alan_id)),
+                    baslatVs: baslat
+                        ? { istekId: baslat.id, hedefId: Number(baslat.alan_id) }
+                        : null
+                });
+            });
+        });
+    });
+});
+
+app.post('/api/vs/istek', girisKontrol, (req, res) => {
+    const gonderenId = req.session.kullanici.id;
+    const hedefId = parseInt(req.body.hedefId, 10);
+    if (!hedefId || hedefId === gonderenId) {
+        return res.json({ basarili: false, mesaj: 'Geçersiz kullanıcı.' });
+    }
+    db.query(
+        `SELECT id FROM kullanicilar WHERE id = ? AND COALESCE(rol, 'kullanici') <> 'admin'`,
+        [hedefId],
+        (err, hedef) => {
+            if (err) return res.json({ basarili: false, mesaj: 'Gönderilemedi' });
+            if (!hedef || !hedef.length) {
+                return res.json({ basarili: false, mesaj: 'Kullanıcı bulunamadı.' });
+            }
+            db.query(
+                `SELECT id, gonderen_id, alan_id FROM vs_istekleri
+                 WHERE durum = 'bekliyor'
+                   AND ((gonderen_id = ? AND alan_id = ?) OR (gonderen_id = ? AND alan_id = ?))
+                 LIMIT 1`,
+                [gonderenId, hedefId, hedefId, gonderenId],
+                (e2, bekleyen) => {
+                    if (e2) return res.json({ basarili: false, mesaj: 'Gönderilemedi' });
+                    if (bekleyen && bekleyen.length) {
+                        const b = bekleyen[0];
+                        if (Number(b.gonderen_id) === gonderenId) {
+                            return res.json({ basarili: false, mesaj: 'Bu kişiye zaten VS isteği gönderdin.' });
+                        }
+                        return res.json({
+                            basarili: false,
+                            mesaj: 'Bu kişi sana zaten VS isteği göndermiş. Düello panelinden kabul edebilirsin.'
+                        });
+                    }
+                    db.query(
+                        'INSERT INTO vs_istekleri (gonderen_id, alan_id) VALUES (?, ?)',
+                        [gonderenId, hedefId],
+                        (e3, sonuc) => {
+                            if (e3) return res.json({ basarili: false, mesaj: 'İstek kaydedilemedi' });
+                            res.json({
+                                basarili: true,
+                                istekId: sonuc.insertId,
+                                mesaj: 'VS isteği gönderildi.'
+                            });
+                        }
+                    );
+                }
+            );
+        }
+    );
+});
+
+app.post('/api/vs/istek/:id/kabul', girisKontrol, (req, res) => {
+    const uid = req.session.kullanici.id;
+    const istekId = parseInt(req.params.id, 10);
+    if (!istekId) return res.json({ basarili: false, mesaj: 'Geçersiz istek.' });
+    db.query(
+        `SELECT id, gonderen_id FROM vs_istekleri WHERE id = ? AND alan_id = ? AND durum = 'bekliyor'`,
+        [istekId, uid],
+        (err, rows) => {
+            if (err) return res.json({ basarili: false, mesaj: 'Kabul edilemedi' });
+            if (!rows || !rows.length) {
+                return res.json({ basarili: false, mesaj: 'İstek bulunamadı veya süresi doldu.' });
+            }
+            const gonderenId = Number(rows[0].gonderen_id);
+            db.query(
+                `UPDATE vs_istekleri SET durum = 'kabul', gonderen_bildirildi = 0 WHERE id = ?`,
+                [istekId],
+                (e2) => {
+                    if (e2) return res.json({ basarili: false, mesaj: 'Kabul edilemedi' });
+                    res.json({
+                        basarili: true,
+                        istekId,
+                        karsiId: gonderenId,
+                        mesaj: 'VS başlıyor!'
+                    });
+                }
+            );
+        }
+    );
+});
+
+app.post('/api/vs/istek/:id/red', girisKontrol, (req, res) => {
+    const uid = req.session.kullanici.id;
+    const istekId = parseInt(req.params.id, 10);
+    if (!istekId) return res.json({ basarili: false, mesaj: 'Geçersiz istek.' });
+    db.query(
+        `UPDATE vs_istekleri SET durum = 'red' WHERE id = ? AND alan_id = ? AND durum = 'bekliyor'`,
+        [istekId, uid],
+        (err, sonuc) => {
+            if (err) return res.json({ basarili: false, mesaj: 'Reddedilemedi' });
+            if (!sonuc || sonuc.affectedRows === 0) {
+                return res.json({ basarili: false, mesaj: 'İstek bulunamadı.' });
+            }
+            res.json({ basarili: true, mesaj: 'VS isteği reddedildi.' });
+        }
+    );
+});
+
+app.post('/api/vs/bildirildi', girisKontrol, (req, res) => {
+    const uid = req.session.kullanici.id;
+    const istekId = parseInt(req.body.istekId, 10);
+    if (!istekId) return res.json({ basarili: false });
+    db.query(
+        `UPDATE vs_istekleri SET gonderen_bildirildi = 1
+         WHERE id = ? AND gonderen_id = ? AND durum = 'kabul'`,
+        [istekId, uid],
+        () => res.json({ basarili: true })
+    );
+});
+
+app.post('/api/vs/sonlandir', girisKontrol, (req, res) => {
+    const uid = req.session.kullanici.id;
+    const istekId = parseInt(req.body.istekId, 10);
+    if (!istekId) return res.json({ basarili: false, mesaj: 'Geçersiz istek.' });
+    db.query(
+        `UPDATE vs_istekleri SET durum = 'tamamlandi', gonderen_bildirildi = 1
+         WHERE id = ? AND durum = 'kabul' AND (gonderen_id = ? OR alan_id = ?)`,
+        [istekId, uid, uid],
+        (err, sonuc) => {
+            if (err) return res.json({ basarili: false, mesaj: 'Sonlandırılamadı' });
+            if (!sonuc || sonuc.affectedRows === 0) {
+                return res.json({ basarili: false, mesaj: 'Aktif VS bulunamadı.' });
+            }
+            res.json({ basarili: true, mesaj: 'VS sonlandı.' });
+        }
+    );
+});
+
+app.get('/api/liderlik/karsilastir/:hedefId', girisKontrol, (req, res) => {
+    const benimId = req.session.kullanici.id;
+    const hedefId = parseInt(req.params.hedefId, 10);
+    if (!hedefId || hedefId === benimId) {
+        return res.json({ basarili: false, mesaj: 'Geçersiz karşılaştırma.' });
+    }
+    const sql = `
+        SELECT k.id, k.ad, k.soyad, k.kullanici_adi,
+            COALESCE(o.puan, 0) AS puan,
+            (SELECT COUNT(*) FROM gorevler g WHERE g.kullanici_id = k.id AND g.durum = 'tamamlandi') AS tamamlanan
+        FROM kullanicilar k
+        LEFT JOIN kullanici_odul o ON o.kullanici_id = k.id
+        WHERE k.id IN (?, ?) AND COALESCE(k.rol, 'kullanici') <> 'admin'`;
+    db.query(sql, [benimId, hedefId], (err, rows) => {
+        if (err) return res.json({ basarili: false, mesaj: 'Karşılaştırılamadı' });
+        const ham = rows || [];
+        if (ham.length < 2) return res.json({ basarili: false, mesaj: 'Kullanıcı bulunamadı.' });
+        const benRow = ham.find((r) => Number(r.id) === Number(benimId));
+        const hedefRow = ham.find((r) => Number(r.id) === Number(hedefId));
+        if (!benRow || !hedefRow) return res.json({ basarili: false, mesaj: 'Kullanıcı bulunamadı.' });
+        const ben = liderlikSatirOlustur(benRow, 0, benimId);
+        const hedef = liderlikSatirOlustur(hedefRow, 0, benimId);
+        ben.benMi = true;
+        hedef.benMi = false;
+        const puanFark = ben.puan - hedef.puan;
+        const gorevFark = ben.tamamlanan - hedef.tamamlanan;
+        let sonuc = 'berabere';
+        let mesaj = 'Puanlar eşit — sıradaki görevi ilk sen bitir!';
+        if (puanFark > 0) {
+            sonuc = 'onde';
+            mesaj = `${puanFark} puan öndesin.`;
+        } else if (puanFark < 0) {
+            sonuc = 'geride';
+            mesaj = `${Math.abs(puanFark)} puan geridesin — yetiş!`;
+        }
+        const yanitGonder = (benimSira, hedefSira) => {
+            db.query(
+                `SELECT id FROM vs_istekleri WHERE durum = 'kabul'
+                 AND ((gonderen_id = ? AND alan_id = ?) OR (gonderen_id = ? AND alan_id = ?))
+                 ORDER BY guncelleme_tarihi DESC LIMIT 1`,
+                [benimId, hedefId, hedefId, benimId],
+                (eVs, vsRows) => {
+                    const vsIstekId = vsRows && vsRows[0] ? Number(vsRows[0].id) : null;
+                    res.json({
+                        basarili: true,
+                        ben,
+                        hedef,
+                        puanFark,
+                        gorevFark,
+                        sonuc,
+                        mesaj,
+                        benimSira: benimSira || null,
+                        hedefSira: hedefSira || null,
+                        siraFark: benimSira && hedefSira ? hedefSira - benimSira : null,
+                        vsIstekId
+                    });
+                }
+            );
+        };
+        db.query(
+            `SELECT k.id, COALESCE(o.puan, 0) AS puan
+             FROM kullanicilar k
+             LEFT JOIN kullanici_odul o ON o.kullanici_id = k.id
+             WHERE COALESCE(k.rol, 'kullanici') <> 'admin'
+             ORDER BY puan DESC`,
+            (e2, tum) => {
+                if (e2) {
+                    return yanitGonder(null, null);
+                }
+                const sirali = (tum || []).map((r) => ({ id: r.id, puan: Number(r.puan) || 0 }));
+                const benimSira = sirali.findIndex((r) => Number(r.id) === Number(benimId)) + 1;
+                const hedefSira = sirali.findIndex((r) => Number(r.id) === Number(hedefId)) + 1;
+                yanitGonder(benimSira, hedefSira);
+            }
+        );
     });
 });
 
@@ -529,6 +972,7 @@ app.get('/api/odul', girisKontrol, (req, res) => {
                 seviye: sev,
                 seviyeEtiket: seviyeEtiket(sev),
                 sonraki: sonrakiEsik(puan),
+                ilerleme: seviyeIlerlemeYuzde(puan),
                 tamamlamaPuani: TAMAMLAMA_PUANI
             });
         });
@@ -586,7 +1030,7 @@ app.post('/api/yardim', girisKontrol, (req, res) => {
     res.json({ basarili: false, mesaj: 'Geçersiz talep türü.' });
 });
 
-app.get('/admin', girisKontrol, adminKontrol, (req, res) => publicDosyaGonder('admin.html', res));
+app.get('/admin', girisKontrol, adminKontrol, (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
 
 app.get('/api/admin/istatistikler', girisKontrol, adminKontrol, (req, res) => {
     const sayimSql = `
@@ -694,24 +1138,40 @@ app.put('/api/admin/yardim-talepleri/:id/durum', girisKontrol, adminKontrol, (re
     );
 });
 
-app.use(express.static(PUBLIC_DIR, { index: false }));
+app.use(express.static(path.join(__dirname, 'public'), { index: false }));
 
 const PORT = Number(process.env.PORT || 3000);
+let aktifPort = PORT;
+
 function startServer() {
-    publicKlasorunuKontrolEt();
-    const dinle = (port, deneme) => {
-        const server = app.listen(port, '0.0.0.0', () => {
-            console.log(`Sunucu hazır (port ${port})`);
+    const dene = (port, deneme) => {
+        const server = app.listen(port, () => {
+            aktifPort = port;
+            const url = `http://localhost:${port}`;
+            console.log('');
+            console.log('========================================');
+            console.log('  Uygulama hazir — tarayicida acin:');
+            console.log('  ' + url);
+            if (port !== PORT) {
+                console.log('');
+                console.log('  Not: Port ' + PORT + ' dolu oldugu icin ' + port + ' kullaniliyor.');
+                console.log('  Eski sunucuyu kapatmak icin o terminali durdurun (Ctrl+C).');
+            }
+            console.log('========================================');
+            console.log('');
         });
         server.on('error', (err) => {
-            if (err && err.code === 'EADDRINUSE' && !isProduction && deneme < 5) {
+            if (err && err.code === 'EADDRINUSE' && deneme < 5) {
                 const yeniPort = port + 1;
-                console.warn(`Port ${port} dolu, ${yeniPort} deneniyor...`);
-                return dinle(yeniPort, deneme + 1);
+                console.warn(`Port ${port} kullanımda, ${yeniPort} deneniyor...`);
+                return dene(yeniPort, deneme + 1);
             }
-            console.error('Sunucu başlatılamadı:', err.message);
+            console.error('Sunucu baslatilamadi:', err.message);
+            if (err && err.code === 'EADDRINUSE') {
+                console.error(`Port ${port} kullanımda. Eski "node server.js" sürecini kapatın veya PORT=.env ile baska port secin.`);
+            }
             process.exit(1);
         });
     };
-    dinle(PORT, 0);
+    dene(PORT, 0);
 }

@@ -29,7 +29,7 @@ CREATE TABLE gorevler (
   kullanici_id INT UNSIGNED NOT NULL,
   gorev_adi VARCHAR(255) NOT NULL,
   aciklama TEXT NULL,
-  son_tarih DATE NULL,
+  son_tarih DATETIME NULL,
   durum ENUM('bekliyor', 'devam_ediyor', 'tamamlandi') NOT NULL DEFAULT 'bekliyor',
   olusturma_tarihi TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (id),
