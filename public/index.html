@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Görev Takip</title>
+    <script src="js/theme.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-layout">
+        <nav class="yan-menu" aria-label="Yan menü">
+            <button type="button" class="yan-menu-btn" id="btn-temalar" data-yan-panel="temalar" aria-expanded="false">
+                <span class="yan-menu-ikon" aria-hidden="true">🎨</span>
+                <span class="yan-menu-metin">Temalar</span>
+            </button>
+            <button type="button" class="yan-menu-btn" id="btn-duello" data-yan-panel="duello" aria-expanded="false">
+                <span class="yan-menu-ikon" aria-hidden="true">⚔️</span>
+                <span class="yan-menu-metin">Düello</span>
+            </button>
+        </nav>
+
+        <aside class="yan-panel" id="yan-panel" aria-hidden="true" hidden>
+            <div class="yan-panel-baslik-row">
+                <h2 class="yan-panel-baslik" id="yan-panel-baslik">Temalar</h2>
+                <button type="button" class="modal-x yan-panel-kapat" id="yan-panel-kapat" aria-label="Paneli kapat">×</button>
+            </div>
+
+            <div class="yan-panel-govde" id="yan-panel-temalar">
+                <p class="yan-panel-aciklama" id="odul-panel-alt">Görevleri tamamladıkça puan kazan, tema ve çerçeve aç.</p>
+                <div class="tema-ozet-satir">
+                    <div class="tema-ozet-kutu">
+                        <span class="odul-ozet-seviye" id="odul-seviye">Başlangıç</span>
+                        <strong class="odul-ozet-puan" id="odul-puan">0</strong>
+                        <span class="odul-ozet-puan-etiket">puan</span>
+                    </div>
+                    <div class="tema-ozet-ilerleme">
+                        <div class="odul-ilerleme-cubuk">
+                            <div class="odul-ilerleme-dolgu" id="odul-ilerleme-dolgu" style="width:0%"></div>
+                        </div>
+                        <p class="odul-ilerleme" id="odul-ilerleme">Bir görevi tamamlayınca puan kazanırsın.</p>
+                    </div>
+                </div>
+                <div class="tema-grid" id="odul-grid" role="list"></div>
+            </div>
+
+            <div class="yan-panel-govde" id="yan-panel-duello" hidden>
+                <section class="liderlik-panel liderlik-panel-yan" id="liderlik-panel" aria-label="Seviye ligi ve yarış">
+                    <div class="liderlik-ust">
+                        <div>
+                            <p class="liderlik-alt" id="liderlik-ozet">Diğer öğrencilerin seviye ve puanlarını gör, yarış.</p>
+                        </div>
+                        <div class="liderlik-ben-kutu" id="liderlik-ben-kutu">
+                            <span class="liderlik-ben-sira" id="liderlik-ben-sira">—</span>
+                            <span class="liderlik-ben-etiket">sıran</span>
+                        </div>
+                    </div>
+                    <div class="vs-gelen-wrap" id="vs-gelen-wrap" hidden>
+                        <h3 class="liderlik-alt-baslik">Gelen VS istekleri</h3>
+                        <div class="vs-gelen-liste" id="vs-gelen-liste" role="list"></div>
+                    </div>
+                    <div class="liderlik-podyum" id="liderlik-podyum" aria-label="İlk üç"></div>
+                    <div class="liderlik-rakip-wrap" id="liderlik-rakip-wrap" hidden>
+                        <h3 class="liderlik-alt-baslik">Yakın rakiplerin</h3>
+                        <div class="liderlik-rakip-satir" id="liderlik-rakipler"></div>
+                    </div>
+                    <div class="liderlik-tablo-wrap">
+                        <h3 class="liderlik-alt-baslik">Tüm sıralama · VS</h3>
+                        <div class="liderlik-tablo" id="liderlik-tablo" role="list"></div>
+                    </div>
+                </section>
+            </div>
+        </aside>
+
+        <div class="yan-panel-backdrop" id="yan-panel-backdrop" hidden aria-hidden="true"></div>
+
+    <div class="container app-ana">
+        <header class="header">
+            <div class="header-left">
+                <span class="logo-icon">📚</span>
+                <h1>Görev Takip</h1>
+            </div>
+            <div class="header-right">
+                <button type="button" class="btn btn-secondary btn-theme" data-theme-toggle aria-pressed="false">Karanlik Mod</button>
+                <button type="button" class="btn btn-yardim" id="btn-yardim" title="Yardım">Yardım</button>
+                <a href="/" class="btn btn-secondary">Tanıtım</a>
+                <a href="/admin" id="admin-link" class="btn btn-secondary" style="display:none;">Admin</a>
+                <div class="profil-kart" id="profil-kart" aria-label="Profil ve ödüller">
+                    <div class="profil-avatar cerceve-baslangic" id="profil-avatar" title="Seviye çerçevesi">
+                        <span id="profil-bas-harf">?</span>
+                    </div>
+                    <div class="profil-ozet">
+                        <strong class="profil-ad" id="profil-ad">Hoş geldin</strong>
+                        <span class="profil-kullanici" id="profil-kullanici">@kullanici</span>
+                        <div class="profil-mini-satir">
+                            <span class="profil-seviye-rozet" id="profil-seviye-rozet">🌱 Başlangıç</span>
+                            <span class="profil-puan" id="profil-puan">0 puan</span>
+                        </div>
+                        <div class="profil-ilerleme-wrap" title="Sonraki seviyeye ilerleme">
+                            <div class="profil-ilerleme-cubuk">
+                                <div class="profil-ilerleme-dolgu" id="profil-ilerleme-dolgu" style="width:0%"></div>
+                            </div>
+                            <span class="profil-ilerleme-metin" id="profil-ilerleme-metin">0%</span>
+                        </div>
+                    </div>
+                </div>
+                <a href="/api/cikis" class="btn btn-logout">Çıkış</a>
+            </div>
+        </header>
+
+        <div id="vs-canli-serit" class="vs-canli-serit" hidden aria-label="Aktif VS yarışı">
+            <div class="vs-canli-ust">
+                <strong class="vs-canli-baslik">⚔️ VS devam ediyor</strong>
+                <button type="button" class="vs-canli-detay-btn" id="vs-canli-detay">Detay</button>
+                <button type="button" class="vs-canli-kapat" id="vs-canli-kapat" aria-label="VS şeridini kapat">×</button>
+            </div>
+            <div id="vs-canli-icerik" class="vs-canli-icerik"></div>
+        </div>
+
+        <main class="main-content">
+            <div class="stats">
+                <div class="stat-card">
+                    <span class="stat-icon">📋</span>
+                    <div class="stat-info">
+                        <span class="stat-number" id="toplam-gorev">0</span>
+                        <span class="stat-label">Toplam</span>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-icon">⏳</span>
+                    <div class="stat-info">
+                        <span class="stat-number" id="bekleyen-gorev">0</span>
+                        <span class="stat-label">Bekliyor</span>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-icon">🔄</span>
+                    <div class="stat-info">
+                        <span class="stat-number" id="devam-gorev">0</span>
+                        <span class="stat-label">Devam</span>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-icon">✅</span>
+                    <div class="stat-info">
+                        <span class="stat-number" id="tamamlanan-gorev">0</span>
+                        <span class="stat-label">Bitti</span>
+                    </div>
+                </div>
+            </div>
+
+            <section class="music-panel" aria-label="Müzik">
+                <div class="panel-header music-panel-header">
+                    <h2>Çalışırken dinle</h2>
+                    <div class="music-tabs" role="tablist">
+                        <button type="button" class="music-tab active" data-music="spotify" role="tab" aria-selected="true">Spotify</button>
+                        <button type="button" class="music-tab" data-music="youtube" role="tab" aria-selected="false">YouTube</button>
+                    </div>
+                </div>
+                <p class="music-hint">Liste adreslerini değiştirmek için <code>public/js/panel.js</code> dosyasındaki <code>MUZIK</code> objesine bakın.</p>
+                <div class="music-frame-wrap" id="music-spotify"></div>
+                <div class="music-frame-wrap music-frame-hidden" id="music-youtube" hidden></div>
+            </section>
+
+            <div class="gorev-ekle-panel">
+                <h2>Yeni görev</h2>
+                <form id="gorevForm">
+                    <div class="form-row">
+                        <div class="input-group">
+                            <label for="gorev-adi">Ad</label>
+                            <input type="text" id="gorev-adi" required placeholder="Ne yapılacak?">
+                        </div>
+                        <div class="input-group">
+                            <label for="son-tarih">Son tarih ve saat</label>
+                            <input type="datetime-local" id="son-tarih" step="1">
+                        </div>
+                    </div>
+                    <div class="input-group">
+                        <label for="aciklama">Not</label>
+                        <textarea id="aciklama" rows="2" placeholder="İsteğe bağlı"></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Kaydet</button>
+                </form>
+            </div>
+
+            <div class="gorev-listesi-panel">
+                <div class="panel-header">
+                    <h2>Listem</h2>
+                    <div class="filtre-grup">
+                        <button type="button" class="filtre-btn active" data-filtre="hepsi">Tümü</button>
+                        <button type="button" class="filtre-btn" data-filtre="bekliyor">Bekliyor</button>
+                        <button type="button" class="filtre-btn" data-filtre="devam_ediyor">Devam</button>
+                        <button type="button" class="filtre-btn" data-filtre="tamamlandi">Bitti</button>
+                    </div>
+                </div>
+                <div id="gorev-listesi" class="gorev-listesi">
+                    <p class="bos-mesaj">Henüz yok.</p>
+                </div>
+            </div>
+        </main>
+    </div>
+    </div>
+
+    <div id="bildirim-toast" class="bildirim-toast" role="status" aria-live="polite" hidden></div>
+
+    <div id="celebration-overlay" class="celebration-overlay" aria-hidden="true" hidden>
+        <div class="celebration-backdrop"></div>
+        <div class="celebration-card" role="dialog" aria-labelledby="celebration-title">
+            <div class="celebration-check" aria-hidden="true">
+                <svg viewBox="0 0 52 52" class="celebration-check-svg"><circle class="celebration-circle" cx="26" cy="26" r="24" fill="none"/><path class="celebration-tick" fill="none" d="M14 27l8 8 16-16"/></svg>
+            </div>
+            <h2 id="celebration-title" class="celebration-title">Harika!</h2>
+            <p class="celebration-text" id="celebration-text">Görev tamamlandı.</p>
+            <p class="celebration-puan" id="celebration-puan"></p>
+            <button type="button" class="btn btn-primary celebration-kapat" id="celebration-kapat">Süper</button>
+        </div>
+        <div id="confetti-root" class="confetti-root" aria-hidden="true"></div>
+    </div>
+
+    <div id="yaris-modal" class="modal-root" aria-hidden="true" hidden>
+        <div class="modal-backdrop" id="yaris-modal-kapat-bg"></div>
+        <div class="modal-kutu yaris-modal-kutu" role="dialog" aria-labelledby="yaris-baslik" aria-modal="true">
+            <div class="modal-baslik-row">
+                <h2 id="yaris-baslik">Seviye yarışı</h2>
+                <button type="button" class="modal-x" id="yaris-modal-kapat" aria-label="Kapat">×</button>
+            </div>
+            <div id="yaris-icerik" class="yaris-icerik">
+                <p class="bos-mesaj">Yükleniyor…</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="yardim-modal" class="modal-root" aria-hidden="true" hidden>
+        <div class="modal-backdrop" id="yardim-modal-kapat-bg"></div>
+        <div class="modal-kutu" role="dialog" aria-labelledby="yardim-baslik" aria-modal="true">
+            <div class="modal-baslik-row">
+                <h2 id="yardim-baslik">Yardım</h2>
+                <button type="button" class="modal-x" id="yardim-modal-kapat" aria-label="Kapat">×</button>
+            </div>
+            <div class="yardim-sekmeler">
+                <button type="button" class="yardim-sekme active" data-yardim-sekme="ucretsiz">Ücretsiz — forum</button>
+                <button type="button" class="yardim-sekme" data-yardim-sekme="ucretli">Ücretli — moderatör</button>
+            </div>
+            <div id="yardim-panel-ucretsiz" class="yardim-panel">
+                <p class="yardim-aciklama">Toplulukta ücretsiz soru sorabilirsin. Bağlantıyı açmadan önce kısa bir kayıt oluşturman istenebilir.</p>
+                <p class="yardim-link-wrap"><a id="yardim-forum-link" href="#" target="_blank" rel="noopener noreferrer" class="btn btn-primary btn-forum">Foruma git</a></p>
+                <p class="yardim-kucuk" id="yardim-forum-url"></p>
+            </div>
+            <div id="yardim-panel-ucretli" class="yardim-panel yardim-panel-gizli" hidden>
+                <p class="yardim-aciklama">Ücretli destekte talebin moderatör ekibine ve site yöneticisine düşer; yanıt süreci ve ödeme koşulları ayrıca bildirilir.</p>
+                <ul class="yardim-ekstra-list" id="yardim-ekstra-list"></ul>
+                <form id="yardim-ucretli-form" class="yardim-form">
+                    <div class="input-group">
+                        <label for="yardim-konu">Konu (isteğe bağlı)</label>
+                        <input type="text" id="yardim-konu" maxlength="200" placeholder="Kısa başlık">
+                    </div>
+                    <div class="input-group">
+                        <label for="yardim-mesaj">Sorunuz</label>
+                        <textarea id="yardim-mesaj" rows="4" required placeholder="En az 8 karakter..."></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Talebi gönder</button>
+                    <p class="yardim-kucuk" id="yardim-ucretli-mesaj"></p>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>temaButonlariniHazirla();</script>
+    <script src="js/gorev-zamanlayici.js"></script>
+    <script src="js/seviye.js"></script>
+    <script src="js/panel.js"></script>
+</body>
+</html>
